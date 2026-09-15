@@ -1,0 +1,4 @@
+makecert.exe -r -pe -n "CN=Saeoll" -b 12/23/2024 -e 12/31/2025 -sky exchange -ss Saeoll
+
+
+signtool.exe sign /f "C:\Windows\System32\saeoll_ov-works_client.pfx" /fd SHA256 /p saeoll8455 /tr http://timestamp.digicert.com /td sha256 "C:\Users\SAEOLL\source\repos\csharpOvWorksClient_1.0.1\csharpOvWorksClient_1.0.0\bin\Debug\csharpOvWorksClient_1.0.0.exe"

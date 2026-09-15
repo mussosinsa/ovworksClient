@@ -1,0 +1,15 @@
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\bin\Release\csharpOvWorksClient_1.0.0.exe.config
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\bin\Release\csharpOvWorksClient_1.0.0.exe
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\bin\Release\csharpOvWorksClient_1.0.0.pdb
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\bin\Release\BouncyCastle.Crypto.dll
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\bin\Release\BouncyCastle.Crypto.xml
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1.0.0.csproj.AssemblyReference.cache
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1._0._0.OvWorksClientDashboardForm.resources
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1._0._0.OvWorksLoginForm.resources
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1._0._0.OvWorksMessageForm.resources
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1._0._0.Properties.Resources.resources
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1.0.0.csproj.GenerateResource.cache
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1.0.0.csproj.CoreCompileInputs.cache
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOv.386351C8.Up2Date
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1.0.0.exe
+D:\보안기능\csharpOvWorksClient_1.0.9\csharpOvWorksClient_1.0.0\obj\Release\csharpOvWorksClient_1.0.0.pdb
