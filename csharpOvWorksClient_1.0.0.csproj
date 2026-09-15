@@ -108,6 +108,7 @@
     </Compile>
     <Compile Include="OvWorksReportedDevicesXML.cs" />
     <Compile Include="OvWorksSessionStatus.cs" />
+    <Compile Include="OvWorksSecurityFilesDownloader.cs" />
     <Compile Include="OvWorksURI.cs" />
     <Compile Include="OvWorksvmsXML.cs" />
     <Compile Include="OvWorksWaitingForm.cs">
