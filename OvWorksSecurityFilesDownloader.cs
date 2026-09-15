@@ -83,6 +83,13 @@ namespace csharpOvWorksClient_1._0._0
                     string.Format("서버가 올바른 {0} PEM 파일을 반환하지 않았습니다.", pemLabel));
             }
 
+            string destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (string.IsNullOrWhiteSpace(destinationDirectory))
+            {
+                throw new InvalidOperationException("보안 파일 저장 폴더를 확인할 수 없습니다.");
+            }
+            Directory.CreateDirectory(destinationDirectory);
+
             string temporaryPath = destinationPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {

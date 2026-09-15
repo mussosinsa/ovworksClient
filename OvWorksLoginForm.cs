@@ -130,8 +130,9 @@ namespace csharpOvWorksClient_1._0._0
                         (caCertificateMissing ? "- ca.crt\r\n" : string.Empty) +
                         (publicKeyMissing ? "- public_key.pem\r\n" : string.Empty);
                     DialogResult downloadResult = MessageBox.Show(
-                        "로그인에 필요한 다음 파일이 프로그램 폴더에 없습니다.\r\n\r\n" +
-                        missingFiles + "\r\n서버에서 지금 다운로드하시겠습니까?",
+                        "로그인에 필요한 다음 보안 파일이 없습니다.\r\n\r\n" +
+                        missingFiles + "\r\n사용자 보안 파일 폴더에 다운로드하시겠습니까?\r\n" +
+                        OvWorksApplicationFiles.SecurityFilesDirectory,
                         "보안 파일 다운로드",
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Warning);
@@ -188,7 +189,11 @@ namespace csharpOvWorksClient_1._0._0
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.ToString(), "로그인 초기화 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    "보안 파일 다운로드 또는 로그인 준비에 실패했습니다.\r\n\r\n" + ex.Message,
+                    "로그인 초기화 오류",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 
