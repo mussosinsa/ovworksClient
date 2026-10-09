@@ -373,5 +373,26 @@ namespace csharpOvWorksClient_1._0._0
                 return string.Empty;
             }
         }
+
+        public async Task<bool> TryPostAuditActionAsync(
+            HttpClient client, OvWorksURI uri, string xml)
+        {
+            try
+            {
+                using (var request = new HttpRequestMessage(
+                    HttpMethod.Post, uri._api_uri + uri._api_events))
+                {
+                    request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
+                    using (var response = await client.SendAsync(request))
+                    {
+                        return response.IsSuccessStatusCode;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
     }
 }

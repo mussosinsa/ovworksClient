@@ -69,6 +69,7 @@ namespace csharpOvWorksClient_1._0._0
         // 엔진에 세션 상태를 묻는 타이머. 사용자가 콘솔만 쓰고 있어도 종료를 알아채게 한다.
         private System.Windows.Forms.Timer sessionPollTimer;
         private bool _sessionPollInProgress;
+        private bool _serverConnectionInterrupted;
 
         public OvWorksClientDashboardForm(string serialNum, string host, string Vusername, string username, string profile, string password, string hashStatus)
         {
@@ -590,7 +591,21 @@ namespace csharpOvWorksClient_1._0._0
                 {
                     await EndSessionAsync(status.Reason);
                 }
-                // Unknown 은 아무것도 하지 않는다. 답을 얻지 못한 것이지 세션이 끝난 것이 아니다.
+                else if (status.State == OvWorksSessionState.Unknown && !_serverConnectionInterrupted)
+                {
+                    _serverConnectionInterrupted = true;
+                    OvWorksAuditQueue.Enqueue(
+                        "Connection to oVirt Engine was interrupted at " + DateTime.UtcNow.ToString("o") +
+                        " for user " + _username + "@" + _profile + ".", "warning");
+                }
+                else if (status.State == OvWorksSessionState.Live && _serverConnectionInterrupted)
+                {
+                    _serverConnectionInterrupted = false;
+                    OvWorksAuditQueue.Enqueue(
+                        "Connection to oVirt Engine was restored at " + DateTime.UtcNow.ToString("o") +
+                        " for user " + _username + "@" + _profile + ".", "normal");
+                    await FlushPendingAuditNotificationsAsync();
+                }
             }
             finally
             {
@@ -856,8 +871,6 @@ namespace csharpOvWorksClient_1._0._0
         }
         private async Task auditAction()
         {
-            Random rnd = new Random();
-            
             // Get local IP Address(IPv4) -2026-08-21-
             string hostName = Dns.GetHostName();
             string localIPv4Address = string.Empty;
@@ -871,24 +884,22 @@ namespace csharpOvWorksClient_1._0._0
                 }
             }
 
-            string _xml = $"<event>" +
-                $"<description>User {_username}@{_profile}-authz connected from '{localIPv4Address}' OV-Works Client 4.5.1 Integrity {_hashStatus}</description>" +
-                $"<severity>{_hashStatus}</severity>" +
-                $"<origin>OV-Works Client 4.5.1</origin>" +
-                $"<custom_id>{DateTime.Now.ToString("Md") + rnd.Next(10, 100).ToString()}</custom_id>" +
-                $"</event>";
-            int selectedIndex = ListviewSelectedIndex();
-            //string audit_info;
-            // PKI cert hash
-
+            OvWorksAuditQueue.Enqueue(
+                $"User {_username}@{_profile}-authz connected from '{localIPv4Address}' " +
+                $"OV-Works Client 4.5.1 Integrity {_hashStatus}", _hashStatus);
             InitHttpClient();
             bool _pkicert = await ovWorksClientHandler.GETPKIcert(client, ovWorksURI, ovWorksConfig);
             if (_pkicert)
             {
-                string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler,
-                        _xml, _username, _profile, _password);
+                await FlushPendingAuditNotificationsAsync();
             }
             DisposeHttpClient();
+        }
+
+        private async Task FlushPendingAuditNotificationsAsync()
+        {
+            await OvWorksAuditQueue.FlushAsync(xml =>
+                ovWorksClientHandler.TryPostAuditActionAsync(client, ovWorksURI, xml));
         }
         private void Serializer2_UnreferencedObject(object sender, UnreferencedObjectEventArgs e)
         {

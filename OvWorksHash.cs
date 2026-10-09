@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -74,14 +75,14 @@ namespace csharpOvWorksClient_1._0._0
         {
             try
             {
-                hash512Value = hashFileReader(hashFileName);
-                byte[] targetHash512Value = GetHashSha512(targetFileName);
-                if (!hash512Value.SequenceEqual(targetHash512Value))
+                string failedFile;
+                if (!VerifyIntegrityManifest(out failedFile))
                 {
                     hashStatus = "error";
                     if (showResult)
                     {
-                        MessageBox.Show("무결성 검사 결과 변형된 부분이 발견되었습니다.", "무결성 검사 결과",
+                        MessageBox.Show("무결성 검사 결과 변형되거나 누락된 파일이 발견되었습니다.\r\n\r\n" +
+                            failedFile, "무결성 검사 결과",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                     return false;
@@ -111,6 +112,61 @@ namespace csharpOvWorksClient_1._0._0
             {
                 integritySW.Expired = true;
             }
+        }
+
+        private bool VerifyIntegrityManifest(out string failedFile)
+        {
+            failedFile = null;
+            byte[] manifestBytes = File.ReadAllBytes(hashFileName);
+            if (manifestBytes.Length == 64)
+            {
+                throw new InvalidDataException(
+                    "기존 단일 실행 파일 해시 형식은 관련 파일을 검증할 수 없습니다. " +
+                    "SHA-512 무결성 매니페스트를 배포해 주세요.");
+            }
+
+            var expectedHashes = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (string rawLine in File.ReadAllLines(hashFileName))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("#")) continue;
+                int separator = line.IndexOfAny(new[] { ' ', '\t' });
+                if (separator <= 0) throw new InvalidDataException("잘못된 무결성 매니페스트 형식입니다.");
+                string hash = line.Substring(0, separator);
+                string fileName = line.Substring(separator).TrimStart(' ', '\t', '*');
+                if (hash.Length != 128 || fileName.Length == 0 || Path.GetFileName(fileName) != fileName)
+                    throw new InvalidDataException("잘못된 무결성 매니페스트 항목입니다: " + line);
+                expectedHashes[fileName] = HexToBytes(hash);
+            }
+
+            var requiredFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { Path.GetFileName(OvWorksApplicationFiles.ExecutablePath), OvWorksApplicationFiles.ExecutablePath },
+                { "csharpOvWorksClient_1.0.0.exe.config", Path.Combine(Application.StartupPath, "csharpOvWorksClient_1.0.0.exe.config") },
+                { "BouncyCastle.Crypto.dll", Path.Combine(Application.StartupPath, "BouncyCastle.Crypto.dll") },
+                { "ca.crt", OvWorksApplicationFiles.CaCertificatePath },
+                { "public_key.pem", OvWorksApplicationFiles.PublicKeyPath }
+            };
+
+            foreach (KeyValuePair<string, string> required in requiredFiles)
+            {
+                byte[] expected;
+                if (!expectedHashes.TryGetValue(required.Key, out expected) || !File.Exists(required.Value) ||
+                    !expected.SequenceEqual(GetHashSha512(required.Value)))
+                {
+                    failedFile = required.Key;
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static byte[] HexToBytes(string value)
+        {
+            var result = new byte[value.Length / 2];
+            for (int i = 0; i < result.Length; i++)
+                result[i] = byte.Parse(value.Substring(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            return result;
         }
     }
 }
