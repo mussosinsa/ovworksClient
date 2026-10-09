@@ -110,52 +110,90 @@ namespace csharpOvWorksClient_1._0._0
             passwordTextBox.UseSystemPasswordChar=true;
         }
 
-        private void loginButton_Click(object sender, EventArgs e)
+        private async void loginButton_Click(object sender, EventArgs e)
         {
             try
             {
-                string publicKeyPath = OvWorksApplicationFiles.PublicKeyPath;
-
-                if (!File.Exists(publicKeyPath))
+                if (EmptyCheck())
                 {
-                    MessageBox.Show("공개키 파일이 없습니다.\r\n\r\n" + publicKeyPath);
-
                     return;
+                }
+
+                string publicKeyPath = OvWorksApplicationFiles.PublicKeyPath;
+                string caCertificatePath = OvWorksApplicationFiles.CaCertificatePath;
+                bool caCertificateMissing = !File.Exists(caCertificatePath);
+                bool publicKeyMissing = !File.Exists(publicKeyPath);
+
+                if (caCertificateMissing || publicKeyMissing)
+                {
+                    string missingFiles =
+                        (caCertificateMissing ? "- ca.crt\r\n" : string.Empty) +
+                        (publicKeyMissing ? "- public_key.pem\r\n" : string.Empty);
+                    DialogResult downloadResult = MessageBox.Show(
+                        "로그인에 필요한 다음 보안 파일이 없습니다.\r\n\r\n" +
+                        missingFiles + "\r\n사용자 보안 파일 폴더에 다운로드하시겠습니까?\r\n" +
+                        OvWorksApplicationFiles.SecurityFilesDirectory,
+                        "보안 파일 다운로드",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (downloadResult != DialogResult.Yes)
+                    {
+                        return;
+                    }
+
+                    loginButton.Enabled = false;
+                    try
+                    {
+                        await OvWorksSecurityFilesDownloader.DownloadMissingFilesAsync(
+                            hostTextBox.Text);
+                    }
+                    finally
+                    {
+                        loginButton.Enabled = true;
+                    }
+
+                    MessageBox.Show(
+                        "보안 파일 다운로드가 완료되었습니다.",
+                        "보안 파일 다운로드",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
                 }
 
                 string username = usernameTextBox.Text;
                 string password = passwordTextBox.Text;
 
-                if (!EmptyCheck())
-                {
-                    // 여기서 암호화하는 것은 공개키가 쓸 수 있는 상태인지 지금 확인해 두기 위해서다.
-                    // 실제로 보낼 자격증명은 대시보드가 인증할 때마다 새로 만든다. 한 번 만든
-                    // 암호문을 들고 다니면 그것을 가로챈 쪽이 나중에 그대로 다시 보낼 수 있고,
-                    // 그것이 이 화면이 평문을 넘기게 된 이유다.
-                    RsaEncryptionLegacy.EncryptWithPemPublicKey(publicKeyPath, username);
-                    // 실제 패킷과 동일하게 envelope까지 포함한 길이와 공개키 상태를 확인한다.
-                    RsaEncryptionLegacy.EncryptWithPemPublicKey(
-                        publicKeyPath, OvWorksLoginEnvelope.Wrap(password));
+                // 여기서 암호화하는 것은 공개키가 쓸 수 있는 상태인지 지금 확인해 두기 위해서다.
+                // 실제로 보낼 자격증명은 대시보드가 인증할 때마다 새로 만든다. 한 번 만든
+                // 암호문을 들고 다니면 그것을 가로챈 쪽이 나중에 그대로 다시 보낼 수 있고,
+                // 그것이 이 화면이 평문을 넘기게 된 이유다.
+                RsaEncryptionLegacy.EncryptWithPemPublicKey(publicKeyPath, username);
+                // 실제 패킷과 동일하게 envelope까지 포함한 길이와 공개키 상태를 확인한다.
+                RsaEncryptionLegacy.EncryptWithPemPublicKey(
+                    publicKeyPath, OvWorksLoginEnvelope.Wrap(password));
 
-                    using (OvWorksClientDashboardForm ovWorksClientDashboardForm = new OvWorksClientDashboardForm(serialNumberTextBox.Text, hostTextBox.Text, usernameTextBox.Text, username, profileTextBox.Text, password, ovWorksHash.hashStatus))
+                using (OvWorksClientDashboardForm ovWorksClientDashboardForm = new OvWorksClientDashboardForm(serialNumberTextBox.Text, hostTextBox.Text, usernameTextBox.Text, username, profileTextBox.Text, password, ovWorksHash.hashStatus))
+                {
+                    this.Hide();
+                    try
                     {
-                        this.Hide();
-                        try
-                        {
-                            ovWorksClientDashboardForm.ShowDialog();
-                        }
-                        finally
-                        {
-                            passwordTextBox.Clear();
-                            this.Show();
-                            this.Activate();
-                        }
+                        ovWorksClientDashboardForm.ShowDialog();
+                    }
+                    finally
+                    {
+                        passwordTextBox.Clear();
+                        this.Show();
+                        this.Activate();
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.ToString(), "로그인 초기화 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    "보안 파일 다운로드 또는 로그인 준비에 실패했습니다.\r\n\r\n" + ex.Message,
+                    "로그인 초기화 오류",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 
