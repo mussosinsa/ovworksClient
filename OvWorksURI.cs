@@ -12,8 +12,8 @@ namespace csharpOvWorksClient_1._0._0
             "가상머신 이름","상태","호스트","IP","FQDN","메모리","CPU","콘솔","설명","시작시간"
         };
 
-        public readonly string _sw_name = "OV-Works Client";
-        public readonly string _version = "4.5.1-1.w11";
+        public readonly string _sw_name = OvWorksProductInfo.ProductName;
+        public readonly string _version = OvWorksProductInfo.DetailVersion;
         public readonly string _company = "주식회사 새올정보기술";
         public readonly string _api_uri = "/ovirt-engine";
         public readonly string _api_token = "/sso/oauth/token";
