@@ -184,7 +184,7 @@
             this.titleLabel.Name = "titleLabel";
             this.titleLabel.Size = new System.Drawing.Size(537, 35);
             this.titleLabel.TabIndex = 3;
-            this.titleLabel.Text = "OV-Works Client 4.5.1";
+            this.titleLabel.Text = "OV-Works Client 4.5.2-1.w11";
             this.titleLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
             // maximizeButton
