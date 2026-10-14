@@ -380,7 +380,7 @@
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(166, 12);
             this.label2.TabIndex = 0;
-            this.label2.Text = "OV-Works Client 4.5.1-1.w11";
+            this.label2.Text = "OV-Works Client 4.5.2-1.w11";
             // 
             // label1
             // 

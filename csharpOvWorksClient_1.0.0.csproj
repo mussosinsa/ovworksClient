@@ -77,6 +77,7 @@
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
   </ItemGroup>
@@ -89,11 +90,15 @@
       <DependentUpon>OvWorksClientDashboardForm.cs</DependentUpon>
     </Compile>
     <Compile Include="OvWorksClientHandler.cs" />
+    <Compile Include="OvWorksAuditQueue.cs" />
     <Compile Include="OvWorksApplicationFiles.cs" />
     <Compile Include="OvWorksConfig.cs" />
     <Compile Include="OvWorksCryptography.cs" />
     <Compile Include="OvWorksHash.cs" />
+    <Compile Include="OvWorksIntegrityDatabase.cs" />
     <Compile Include="OvWorksLoginEnvelope.cs" />
+    <Compile Include="OvWorksProtectedValue.cs" />
+    <Compile Include="OvWorksProductInfo.cs" />
     <Compile Include="OvWorksLoginForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -108,6 +113,7 @@
     </Compile>
     <Compile Include="OvWorksReportedDevicesXML.cs" />
     <Compile Include="OvWorksSessionStatus.cs" />
+    <Compile Include="OvWorksSecurityFilesDownloader.cs" />
     <Compile Include="OvWorksURI.cs" />
     <Compile Include="OvWorksvmsXML.cs" />
     <Compile Include="OvWorksWaitingForm.cs">
@@ -151,6 +157,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="installer\Remove-OvWorksIntegrityData.ps1" />
+    <None Include="UNINSTALL.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\TechnologyNetworkLoopBackground-large.gif" />
