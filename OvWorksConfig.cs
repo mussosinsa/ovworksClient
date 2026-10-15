@@ -7,6 +7,7 @@ using System.Security.Permissions;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.StartPanel;
 
 namespace csharpOvWorksClient_1._0._0
 {
@@ -14,22 +15,64 @@ namespace csharpOvWorksClient_1._0._0
     {
         public string _config_path;
         public string _viewer_path;
+        public string _hashTarget_Path;
 
         public string _config_fname;
         public string _vm_console_fname;
         public string _ca_cert_fname;
-        public string _hashTarget_fname;
+
+        //public string _hashTarget_fname;
+        // -2026-10-01-
+        // 무결성 검사를 위한 해시 파일(SHA512)
+        public string _hashFileName;
+                
+        // 무결성 검사를 위한 대상 파일
+        public string _hashTargetFileName;
+
+        public string _hashResultTemp_fname;
         public string _audit_fname;
+        public string _SSLCertificate_fname;
+        public string _publicKey_fname;
+
+        public string[] _hashTargetFiles;
+
+        private Guid _UUID;
 
         private Boolean virtviewer_installed;// = false;
 
-        public OvWorksConfig() 
+        public OvWorksConfig()
         {
-            _config_path = "C:\\Users\\" + Environment.UserName + "\\AppData\\Local\\OVWorks\\OVWorksClientSetup\\conf";
+            // -2026-10-01-
+            // 사용자별로 파일을 저장하기 위한 UUID(고정값)
+            _UUID = Guid.Parse("dceffc58-c55c-4358-87ca-825ca465d442");
+            Guid deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, "S09A27E45O63L81L");
+            //_hashFileName = deterministicGuid.ToString() + ".fot";
+            deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, "AUDIT");
+            _audit_fname = deterministicGuid.ToString() + ".e9b";
+            deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, "HASH");
+            _hashResultTemp_fname = deterministicGuid.ToString() + ".hrt";
+            deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, "CERTIFICATE");
+            _SSLCertificate_fname = deterministicGuid.ToString() + ".crt";
+            deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, "PUBLICKEY");
+            _publicKey_fname = deterministicGuid.ToString() + ".pem";
+
+            _hashTargetFileName = "csharpOvWorksClient_1.0.0.exe";
+            _hashTargetFiles = new[] { "BouncyCastle.Crypto.dll", "csharpOvWorksClient_1.0.0.exe" , "Newtonsoft.Json.dll" };
+
+            _config_path = "C:\\Users\\" + Environment.UserName + "\\AppData\\Local\\Saeoll\\OV-WorksClient4.5.2\\conf";
             //C:\Program Files\VirtViewer v11.0-256\bin
+            //C:\Program Files\ovworksViewer v11.0-1\bin
+            //_viewer_path = "C:\\Program Files\\VirtViewer v11.0-256\\bin";
             _viewer_path = "C:\\Program Files\\ovworksViewer v11.0-1\\bin";
-            _hashTarget_fname = "C:\\Program Files (x86)\\OVWorks\\OVWorksClientSetup\\csharpOvWorksClient_1.0.0.exe\\";
-            _audit_fname = "aa5f098ea51d78a06db4ca46cbc6c5c87ad92ef0f846ea6c5888b0e5c1d59c5e.e9b";
+            //_hashTarget_fname = "C:\\Program Files (x86)\\Saeoll\\OV-Works Client 4.5.1\\csharpOvWorksClient_1.0.0.exe\\";
+            //_hashTarget_Path = "C:\\Program Files (x86)\\Saeoll\\OV-Works Client 4.5.2";
+            _hashTarget_Path = "C:\\Users\\" + Environment.UserName + "\\AppData\\Local\\Saeoll\\OV-WorksClient4.5.2\\hash";
+
+            //_audit_fname =          "aa5f098ea51d78a6db.e9b";
+            //_hashResultTemp_fname = "a5f098ea51d78a06db.tmp";
+            //_SSLCertificate_fname = "c87ad92ef0f846ea87.crt";
+            //_publicKey_fname = "e5c1d59c5ee9b5ad9e.pem";
+
             //_viewer_path = ViewerAppCheck();
             ConfigDirectoryCreate();
         }
@@ -38,8 +81,13 @@ namespace csharpOvWorksClient_1._0._0
         {
             if (!Directory.Exists(_config_path))
                 Directory.CreateDirectory(_config_path);
+
+            if (!Directory.Exists(_config_path))
+                Directory.CreateDirectory(_hashTarget_Path);
+
             if (!Directory.Exists(_viewer_path))
                 Directory.CreateDirectory(_viewer_path);
+
         }
         public void FileConfigFlush(string fname)
         {
@@ -100,7 +148,11 @@ namespace csharpOvWorksClient_1._0._0
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             return String.Empty;
+        }        
+        public string userFileName(string username)
+        {
+            Guid deterministicGuid = GuidExtensions.CreateVersion5WithSha512(_UUID, username);            
+            return deterministicGuid.ToString();
         }
-
     }
 }
