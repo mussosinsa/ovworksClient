@@ -1,7 +1,8 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
+using System.ServiceProcess; // 프로젝트 참조 추가 필요
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -9,58 +10,80 @@ namespace csharpOvWorksClient_1._0._0
 {
     internal static class Program
     {
-        private static int abnormalTerminationRecorded;
-
         /// <summary>
         /// 해당 애플리케이션의 주 진입점입니다.
         /// </summary>
         [STAThread]
         static void Main()
         {
-            Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
-            {
-                RecordAbnormalTermination(e.Exception);
-                Environment.Exit(1);
-            };
-            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
-            {
-                RecordAbnormalTermination(e.ExceptionObject as Exception);
-            };
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-
-            // 로그인 화면을 만들기 전에 실행 파일과 관련 파일을 암호화 DB 기준으로 검증한다.
-            // 실패한 프로세스에서는 어떤 로그인/네트워크 동작도 시작하지 않는다.
-            var integrity = new OvWorksHash();
-            if (!integrity.integrityCheck(false))
+            /*
+            // RDP 세션인지 확인
+            if (SystemInformation.TerminalServerSession)
             {
-                MessageBox.Show(
-                    "애플리케이션 또는 관련 파일의 무결성 검사에 실패했습니다.\r\n" +
-                    "안전을 위해 프로그램을 종료합니다.\r\n\r\n" + integrity.LastFailureDetail,
-                    "무결성 검사 실패",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Stop);
-                return;
+                //MessageBox.Show("프로그램을 실행할 수 없습니다.", "실행 제한", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"사용할 수 없는 프로그램입니다.\r\n", "경고 메시지", MessageBoxButtons.OK, MessageBoxIcon.Stop, MessageBoxDefaultButton.Button1, MessageBoxOptions.ServiceNotification);
+                return; // 프로그램 즉시 종료
             }
+            */
+            /*
+            string serviceName = "TermService"; // 원격 데스크톱 서비스 이름
 
-            Application.Run(new OvWorksLoginForm());
-        }
-
-        private static void RecordAbnormalTermination(Exception exception)
-        {
-            if (Interlocked.Exchange(ref abnormalTerminationRecorded, 1) != 0) return;
             try
             {
-                string detail = exception == null ? "unknown error" :
-                    exception.GetType().Name + ": " + exception.Message;
-                OvWorksAuditQueue.Enqueue(
-                    "OV-Works Client terminated abnormally at " +
-                    DateTime.UtcNow.ToString("o") + ". " + detail, "error");
+                using (ServiceController sc = new ServiceController(serviceName))
+                {
+                    // 서비스가 실행 중이면 중지
+                    if (sc.Status == ServiceControllerStatus.Running ||
+                        sc.Status == ServiceControllerStatus.StartPending)
+                    {
+                        sc.Stop();
+                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
+                        //Console.WriteLine("원격 데스크톱 서비스(TermService)를 중지했습니다.");
+                        MessageBox.Show($"사용할 수 없는 프로그램입니다.\r\n", "경고 메시지", MessageBoxButtons.OK, MessageBoxIcon.Stop, MessageBoxDefaultButton.Button1, MessageBoxOptions.ServiceNotification);
+                    }
+                    else
+                    {
+                        //Console.WriteLine("서비스가 이미 중지되어 있습니다.");
+                    }
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // 종료 처리 중에는 감사 파일 기록 실패가 원래 예외를 덮어쓰면 안 된다.
+                //Console.WriteLine($"서비스 제어 중 오류 발생 (관리자 권한 필요): {ex.Message}");
             }
+            */
+            /*
+            string keyPath = @"SYSTEM\CurrentControlSet\Control\Terminal Server";
+            // 0 = 허용, 1 = 차단
+            int value = 1;
+            using (RegistryKey key = Registry.LocalMachine.OpenSubKey(keyPath, writable: true))
+            {
+                if (key != null)
+                {
+                    key.SetValue("fDenyTSConnections", value, RegistryValueKind.DWord);
+                }
+            }
+            */
+            /*
+            using (var sc = new ServiceController("TermService"))// ;
+            {
+                if (sc.Status == ServiceControllerStatus.Running)
+                {
+                    sc.Stop();
+                    sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
+                }
+            }
+            
+            // 시작 유형을 "사용 안 함"으로 변경 (재부팅 후에도 자동 시작 안 되게)
+            
+            using (var key = Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Services\TermService", writable: true))// ;
+            key.SetValue("Start", 4, RegistryValueKind.DWord); // 4 = Disabled
+            */
+            //System.Diagnostics.Process.Start("mstsc.exe", "/v:192.168.50.54:3389");
+            Application.Run(new OvWorksLoginForm());
         }
     }
 }

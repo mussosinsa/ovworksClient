@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -13,6 +14,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Serialization;
+using static csharpOvWorksClient_1._0._0.OvWorksURI;
+using static System.Windows.Forms.LinkLabel;
 
 namespace csharpOvWorksClient_1._0._0
 {
@@ -31,30 +34,114 @@ namespace csharpOvWorksClient_1._0._0
         public OvWorksClientHandler() { }
 
         public async Task<Boolean> Txt2FileSave(string txt, string path, string fname) => await Task.Run(() =>
-                                                                                                {
-                                                                                                    try
-                                                                                                    {
-                                                                                                        StreamWriter file = new StreamWriter(path + "\\" + fname);
-                                                                                                        file.WriteLine(txt);
-                                                                                                        file.Flush();
-                                                                                                        file.Close();
-                                                                                                        return true;
-                                                                                                    }
-                                                                                                    catch (Exception e)
-                                                                                                    {
-                                                                                                        MessageBox.Show("파일 저장시 Exception 발생" + " : " + e.ToString());
-                                                                                                        return false;
-                                                                                                    }
-                                                                                                });
+        {
+            try
+            {
+                using (StreamWriter file = new StreamWriter(path + "\\" + fname, append: true))//;
+                {
+                    file.WriteLine(txt);
+                    //file.Flush();
+                    //file.Close();
+                }
+                return true;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                MessageBox.Show("파일 저장시 UnauthorizedAccessException 발생" + " : " + e.ToString());
+                return false;
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("파일 저장시 Exception 발생" + " : " + e.ToString());
+                return false;
+            }
+        });
+        public async Task<List <string>> Txt2FileRead(string path, string fname)// => await Task.Run(() =>
+        {
+            try
+            {
+                List<string> allLines = new List<string>();
+                using (var fs = new FileStream(path + "\\" + fname, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (StreamReader file = new StreamReader(fs)) //;
+                //using (StreamReader file = new StreamReader(path + "\\" + fname))// ;
+                {
+                    //string result = file.ReadLine();
+                    string result;
+                    while ((result = file.ReadLine()) != null)
+                    {
+                        allLines.Add(result);
+                    }
+                    //file.Flush();
+                    //file.Close();
+                }
+                return allLines;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                MessageBox.Show("파일 읽기시 UnauthorizedAccessException 발생" + " : " + e.ToString());
+                return Enumerable.Empty<string>().ToList(); 
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("파일 읽기 Exception 발생" + " : " + e.ToString());
+                return Enumerable.Empty<string>().ToList();
+            }
+        }
+        // Server alive check -2026-09-03-
+        public async Task<bool> IsRemoteServerAliveAsync(HttpClient client, string url)
+        {
+            try
+            {
+                /*
+                // Use HttpCompletionOption.ResponseHeadersRead for maximum efficiency
+                var request = new HttpRequestMessage(HttpMethod.Head, url);
+                var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+                // Returns true if status code is 200-299
+                return response.IsSuccessStatusCode;
+                */
+                using (var request = new HttpRequestMessage(
+                    HttpMethod.Head, url))
+                using (var response = await client.SendAsync(request))
+                {
+                    return response.IsSuccessStatusCode;
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Server is down, DNS failed, or network is unreachable
+                //MessageBox.Show(new Form() { TopMost = true }, "Server is down, DNS failed, or network is unreachable", "OV-Works Engine 연결 실패");
+                return false;
+            }
+            catch (TaskCanceledException)
+            {
+                // Request timed out
+                //MessageBox.Show(new Form() { TopMost = true }, "Request timed out", "OV-Works Engine 연결 실패");
+                return false;
+            }
+            catch (Exception)
+            {
+                // Catch-all for unexpected errors
+                //MessageBox.Show(new Form() { TopMost = true }, "Catch-all for unexpected errors", "OV-Works Engine 연결 실패");
+                return false;
+            }
+        }
         public void VirtViewer(OvWorksConfig ovWorksConfig)
         {
-            // 화면 캡처 제외는 창을 소유한 프로세스만 적용할 수 있다. 따라서 이 클라이언트가
-            // remote-viewer의 HWND에 SetWindowDisplayAffinity를 호출해서는 안 된다. 보호가 필요한
-            // 배포판은 remote-viewer 자체가 콘솔 창 생성 시 WDA_EXCLUDEFROMCAPTURE를 적용해야 한다.
-            ProcessStartInfo startInfo = new ProcessStartInfo();            
-            startInfo.FileName = ovWorksConfig._viewer_path + "\\remote-viewer.exe";
-            startInfo.Arguments = ovWorksConfig._config_path + "\\" + ovWorksConfig._vm_console_fname;
-            remoteviewerProc = Process.Start(startInfo);
+            //Process remoteviewerProc;
+            //IntPtr remoteviewerHandle = IntPtr.Zero;
+            try
+            {
+                ProcessStartInfo startInfo = new ProcessStartInfo();
+                startInfo.FileName = ovWorksConfig._viewer_path + "\\remote-viewer.exe";
+                startInfo.Arguments = ovWorksConfig._config_path + "\\" + ovWorksConfig._vm_console_fname;
+                //Process.Start(startInfo);
+                remoteviewerProc = Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"콘솔이 오류 : {ex.Message} ");
+            }
         }
 
         // 엔진 세션을 끝낸다.
@@ -124,15 +211,14 @@ namespace csharpOvWorksClient_1._0._0
             }
         }
 
-        public async Task<string> GETusersSync(HttpClient client, OvWorksURI _URI)
+        public async Task<string> GETusersSync(HttpClient client, OvWorksURI _URI )
         {
             // User-Agent, Accept, Authorization 은 InitHttpClient()에서 한 번만 설정한다.
             // DefaultRequestHeaders 는 클라이언트 전체에 적용되므로 요청마다 Add 하면 값이 쌓인다.
-            using (var response = await client.GetAsync(_URI._api_uri + _URI._api_users))
-            {
-                if (!response.IsSuccessStatusCode) return string.Empty;
-                return await response.Content.ReadAsStringAsync();
-            }
+            var respo = await client.GetAsync(_URI._api_uri + _URI._api_users);
+            string result = await respo.Content.ReadAsStringAsync();
+
+            return result;
         }
         // authenticating: 이 요청이 세션을 세우는 요청인가.
         //
@@ -140,28 +226,30 @@ namespace csharpOvWorksClient_1._0._0
         // 이미 세션을 가진 요청이 거절당한 것은 세션이 끝났다는 뜻이다. 뒤의 경우에 "로그인에
         // 실패했습니다"를 띄우면 사용자는 자기 비밀번호를 의심하게 된다. 세션이 끝난 것은 왜
         // 끝났는지까지 담아 대시보드가 알리므로, 여기서는 아무 말도 하지 않고 돌려준다.
-        public async Task<string> GETvmsSync(HttpClient client, OvWorksURI _URI, Boolean authenticating = true)
+        public async Task<string> GETvmsSync(HttpClient client, OvWorksURI _URI, 
+            Boolean authenticating = true)
         {
             // 헤더는 InitHttpClient()에서 한 번만 설정한다. 요청마다 Add 하면 같은 헤더가 중복되고,
             // 재사용되는 클라이언트에서는 InvalidOperationException 으로 이어진다.
             try
             {
-                using (var response = await client.GetAsync(_URI._api_uri + _URI._api_vms))
+                var respo = await client.GetAsync(_URI._api_uri + _URI._api_vms);
+                switch (respo.StatusCode)
                 {
-                    switch (response.StatusCode)
-                    {
-                        case HttpStatusCode.OK:
-                            return await response.Content.ReadAsStringAsync();
-                        case HttpStatusCode.Unauthorized: // username, profile, password를 잘못입력하면 발생함.
-                            if (authenticating)
-                            {
-                                MessageBox.Show("로그인에 실패했습니다.", "사용자 로그인 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }
-                            return HttpStatusCode.Unauthorized.ToString();
-                        default: return response.StatusCode.ToString();
-                    }
+                    case HttpStatusCode.OK:
+                        string result = await respo.Content.ReadAsStringAsync();
+                        return result;
+                        //break;                    
+                    case HttpStatusCode.Unauthorized: // username, profile, password를 잘못입력하면 발생함.
+                        if (authenticating)
+                        {
+                            MessageBox.Show("로그인에 실패했습니다.", "사용자 로그인 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                        return HttpStatusCode.Unauthorized.ToString();
+                        //break;
+                    default: return HttpStatusCode.Continue.ToString();
                 }
-            }
+            }            
             catch (InvalidOperationException ex) 
             {
                 ReportVmListFailure(authenticating);
@@ -169,12 +257,17 @@ namespace csharpOvWorksClient_1._0._0
             }
             catch (HttpRequestException ex) // 잘못된 호스트로 접속할 경우 발생함.
             {
-                ReportVmListTransportFailure(authenticating, ex.Message);
+                ReportVmListFailure(authenticating);
                 return ex.HResult.ToString();
             }
             catch (TaskCanceledException ex)
             {
-                ReportVmListTransportFailure(authenticating, "서버 응답 시간이 초과되었습니다.");
+                ReportVmListFailure(authenticating);
+                return ex.Message;
+            }
+            catch (Exception ex)
+            {
+                ReportVmListFailure(authenticating);
                 return ex.Message;
             }
             //return result;
@@ -194,33 +287,39 @@ namespace csharpOvWorksClient_1._0._0
                     "가상머신 목록 조회 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
-        private void ReportVmListTransportFailure(Boolean authenticating, string detail)
-        {
-            string action = authenticating
-                ? "로그인 요청이 서버에 도달하지 못했습니다."
-                : "가상머신 목록 요청이 서버에 도달하지 못했습니다.";
-            MessageBox.Show(action + "\n\n서버 주소, 포트, 방화벽 및 TLS 인증서를 확인해 주십시오.\n\n" + detail,
-                "서버 연결 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
         public async Task<string> GETGuestVMinfo(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler,
             int index, string action)
         {
-            using (var response = await client.GetAsync(_URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action))
-            {
-                if (!response.IsSuccessStatusCode) return string.Empty;
-                return await response.Content.ReadAsStringAsync();
-            }
+            /*
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
+            client.DefaultRequestHeaders.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_XML));
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(
+               $"{_username + "@" + _profile}:{_password}"))); 
+            */
+            var respo = await client.GetAsync(_URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action);
+            string result = await respo.Content.ReadAsStringAsync();
+            //MessageBox.Show(_URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action);
+            return result;
         }
         public async Task<Boolean> GETPKIcert(HttpClient client, OvWorksURI _URI, OvWorksConfig ovwconfig
             )
         {
-            using (var response = await client.GetAsync(_URI._api_uri + _URI._api_cert))
-            {
-                if (!response.IsSuccessStatusCode) return false;
-                string result = await response.Content.ReadAsStringAsync();
-                return await Txt2FileSave(result, ovwconfig._config_path, ovwconfig._ca_cert_fname);
-            }
+            /*
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
+            client.DefaultRequestHeaders.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_XML));
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(
+               $"{_username + "@" + _profile}:{_password}"))); 
+            */
+            var respo = await client.GetAsync(_URI._api_uri + _URI._api_cert);
+            string result = await respo.Content.ReadAsStringAsync();
+            //return await Txt2FileSave(result, ovwconfig._config_path, ovwconfig._vm_console_fname);            
+            return await Txt2FileSave(result, ovwconfig._config_path, ovwconfig._ca_cert_fname);
             //MessageBox.Show(_URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action);
             //return result;
         }
@@ -242,17 +341,15 @@ namespace csharpOvWorksClient_1._0._0
             //logRichTextBox.AppendText(_uri_console + "\n\n");
             // 이 요청만 Accept 가 다르므로 요청 단위로 지정한다. 요청에 붙은 Accept 가 있으면
             // 클라이언트의 기본 Accept 는 적용되지 않는다.
-            if (string.IsNullOrEmpty(_uri_console)) return false;
-            using (var request = new HttpRequestMessage(HttpMethod.Get, _uri_console))
-            {
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_VIEWER));
-                using (var response = await client.SendAsync(request))
-                {
-                    if (!response.IsSuccessStatusCode) return false;
-                    string result = await response.Content.ReadAsStringAsync();
-                    return await Txt2FileSave(result, ovwconfig._config_path, ovwconfig._vm_console_fname);
-                }
-            }
+            var request = new HttpRequestMessage(HttpMethod.Get, _uri_console);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_VIEWER));
+            var respo = await client.SendAsync(request);
+            string result = await respo.Content.ReadAsStringAsync();
+            byte[] ba = Encoding.UTF8.GetBytes(result);
+            MemoryStream stream = new MemoryStream(ba);
+            //MessageBox.Show(ovwconfig.ViewerAppCheck());
+            //Boolean r = ovwhandler.Text2FileSave(result, ovwconfig._config_path, ovwconfig._vm_console_fname);
+            return await Txt2FileSave(result, ovwconfig._config_path, ovwconfig._vm_console_fname);
         }
         public async Task<string> POSTVMactionAsync(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler, 
             int index, string action)
@@ -272,33 +369,95 @@ namespace csharpOvWorksClient_1._0._0
             string _uri_console = string.Empty;
             _uri_console = _URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action;
             var xml = @"<action/>";
-            using (var request = new HttpRequestMessage(HttpMethod.Post, _uri_console))
+            var request = new HttpRequestMessage(HttpMethod.Post, _uri_console);
+            // Accept, Authorization 은 InitHttpClient()에서 설정된 것을 그대로 쓴다.
+            request.Content = new StringContent(xml, Encoding.UTF8, "application/xml"); 
+            var respo = await client.SendAsync(request);            
+            if (respo.IsSuccessStatusCode)
             {
-                request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
-                using (var response = await client.SendAsync(request))
-                {
-                    return response.StatusCode.ToString();
-                }
+                var jsonResponse = await respo.Content.ReadAsStringAsync();
+                return respo.StatusCode.ToString();
+            }
+            else
+            {
+                return respo.StatusCode.ToString();
             }
         }
-        public async Task<bool> TryPostAuditActionAsync(
-            HttpClient client, OvWorksURI uri, string xml)
+        public async Task<string> POSTAuditactionAsync(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler,
+            string _xml)
         {
+            /* Action to start a virtual machine --------------------------------------------
+            POST /ovirt-engine/api/events HTTP/1.1
+            Accept: application/xml
+            Content-type: application/xml
+            <event>
+                <description>The heat of the host is above 30 Oc</description>
+                <severity>warning</severity>
+                <origin>HP Openview</origin>
+                <custom_id>1</custom_id>
+                <flood_rate>30</flood_rate>
+                <host id="f59a29cd-587d-48a3-b72a-db537eb21957" >
+                    <external_status>
+                        <state>warning</state>
+                </external_status>
+                </host>
+            </event>
+             * ------------------------------------------------------------------------------
+             */
+            string _uri_console = string.Empty;
+            _uri_console = _URI._api_uri + _URI._api_events;
+            var xml = _xml;
+            /*
+            var xml = @"
+<event> 
+<description>The OV-Works Client 1.0.0 Integrity warning</description> 
+  <severity>warning</severity> 
+  <origin>OV-Works</origin> 
+  <custom_id>12</custom_id> 
+</event>";  
+            */
             try
             {
-                using (var request = new HttpRequestMessage(
-                    HttpMethod.Post, uri._api_uri + uri._api_events))
+                var request = new HttpRequestMessage(HttpMethod.Post, _uri_console);
+                // Accept, Authorization 은 InitHttpClient()에서 설정된 것을 그대로 쓴다.
+                request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
+                var respo = await client.SendAsync(request);
+                if (respo.IsSuccessStatusCode)
                 {
-                    request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
-                    using (var response = await client.SendAsync(request))
-                    {
-                        return response.IsSuccessStatusCode;
-                    }
+                    var jsonResponse = await respo.Content.ReadAsStringAsync();
+                    return respo.StatusCode.ToString();
+                }
+                else
+                {
+                    return respo.StatusCode.ToString();
                 }
             }
-            catch (Exception)
+            catch (SocketException sockEx)
             {
-                return false;
+                //MessageBox.Show($"Socket error code: {sockEx.SocketErrorCode}" + "\r\n" + $"Message: {sockEx.Message}");
+                return string.Empty;
+            }
+            catch (HttpRequestException ex) when (ex.InnerException is SocketException sockEx)
+            {
+                // Handle specific SocketErrors (e.g., connection refused, host not found)
+                //Console.WriteLine($"Socket error code: {sockEx.SocketErrorCode}");
+                //Console.WriteLine($"Message: {sockEx.Message}");
+                //MessageBox.Show($"Socket error code: {sockEx.SocketErrorCode}" + "\r\n" + $"Message: {sockEx.Message}");
+                return string.Empty;
+            }
+            catch (HttpRequestException ex)
+            {
+                // Handle other HTTP request errors (e.g., non-success status codes)
+                //Console.WriteLine($"HTTP error: {ex.Message}");
+                //MessageBox.Show($"HTTP error: {ex.Message}");
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                // Handle general fallbacks
+                //Console.WriteLine($"Unexpected error: {ex.Message}");
+                //MessageBox.Show($"Unexpected error: {ex.Message}");
+                return string.Empty;
             }
         }
     }

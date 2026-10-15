@@ -1,5 +1,7 @@
 using System;
+using System.Security;
 using System.Security.Cryptography;
+using System.Windows.Forms;
 
 namespace csharpOvWorksClient_1._0._0
 {
@@ -32,10 +34,21 @@ namespace csharpOvWorksClient_1._0._0
         /// 인증할 때마다 새로 불러야 한다. 한 번 만든 값을 재사용하면 엔진이 그것을 재전송으로
         /// 보고 거절한다 — 그것이 이 봉투의 목적이다.
         /// </summary>
-        public static string Wrap(string credential)
+        public static string Wrap(SecureString credential)
         {
-            long issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            return Prefix + issuedAt + Separator + NewNonce() + Separator + credential;
+            // secure string to plain text convert -2026-09-20-
+            IntPtr ptr = System.Runtime.InteropServices.Marshal.SecureStringToGlobalAllocUnicode(credential);
+            try
+            {
+                long issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                //MessageBox.Show("plaintext: " + System.Runtime.InteropServices.Marshal.PtrToStringUni(ptr) 
+                //    + System.Runtime.InteropServices.Marshal.PtrToStringUni(ptr).Length.ToString());
+                return Prefix + issuedAt + Separator + NewNonce() + Separator + System.Runtime.InteropServices.Marshal.PtrToStringUni(ptr); 
+            }
+            finally
+            {
+                System.Runtime.InteropServices.Marshal.ZeroFreeGlobalAllocUnicode(ptr);
+            }
         }
 
         private static string NewNonce()

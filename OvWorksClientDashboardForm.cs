@@ -10,11 +10,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Security;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -32,12 +33,13 @@ namespace csharpOvWorksClient_1._0._0
     {
         private string _serialNum; // Serial Number
         private string _host; // Server IP or domain
+        private string _Vusername;
         private string _host_protocol; // HTTPS
 
         // 평문이다. 인증할 때마다 새로 감싸 암호화해야 하므로 암호문을 들고 있을 수 없다.
-        private OvWorksProtectedValue _username;
+        private string _username;
         private string _profile;
-        private OvWorksProtectedValue _password;
+        private SecureString _password;
         private string _publicKeyPath;
 
         private string _hashStatus;
@@ -68,23 +70,44 @@ namespace csharpOvWorksClient_1._0._0
         // 엔진에 세션 상태를 묻는 타이머. 사용자가 콘솔만 쓰고 있어도 종료를 알아채게 한다.
         private System.Windows.Forms.Timer sessionPollTimer;
         private bool _sessionPollInProgress;
-        private bool _serverConnectionInterrupted;
 
-        public OvWorksClientDashboardForm(string serialNum, string host, OvWorksProtectedValue username,
-            string profile, OvWorksProtectedValue password, string hashStatus)
+        // - 2026-10-04 -
+        // 이벤트 처리 없이 윈도우 메시지를 가로채어 이동시키는 방법도 있습니다.
+        // 폼 코드에 아래 메서드를 오버라이드하면 타이틀바가 없어도 창 어디나 잡고 움직일 수 있습니다.
+        [DllImport("user32.dll")]
+        public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+        [DllImport("user32.dll")]
+        public static extern bool ReleaseCapture();
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int HTCAPTION = 0x2;
+
+        // 윈도우 스크린샷(Screenshot or printscreen) 방지 API
+        [DllImport("user32.dll")]
+        public static extern uint SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+
+        public OvWorksClientDashboardForm(string serialNum, string host, string Vusername, string username, string profile, SecureString password, string hashStatus, string publicKeyPath)
         {
             InitializeComponent();
+            
+            //네트워크 연결상태(Online/Offline) 확인 -2026-09-06-
+            NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
+
+            // Windows Screenshot protected
+            // 화면캡처를 위해 일시 중지 -2026-08-26-
+            //SetWindowDisplayAffinity(this.Handle, 0x01); //WDA_MONITOR
 
             // 변수 초기화
             _serialNum = serialNum;
             _host = host;
+            _Vusername = Vusername;
             _host_protocol = "https";
             _username = username;
             _profile = profile;
             _password = password;
-            _publicKeyPath = OvWorksApplicationFiles.PublicKeyPath;
+            _publicKeyPath = publicKeyPath;
             
             _hashStatus = hashStatus;
+            //MessageBox.Show(_password);
 
             // Listview 초기화
             vmListView.View=View.Details;
@@ -107,7 +130,7 @@ namespace csharpOvWorksClient_1._0._0
             ovWorksConfig = new OvWorksConfig();
 
             // config 파일 이름 무작위 생성
-            File_Name_Generate(32, 3); // 32 문자열 파일.3 문자열 확장자
+            File_Name_Generate(32, 3); // 16 문자열 파일.3 문자열 확장자
 
             // client handler 초기화
             InitHttpClient();
@@ -115,6 +138,8 @@ namespace csharpOvWorksClient_1._0._0
             handler =new HttpClientHandler();
             // HTTPS(TLS) bypass(만약 사용할 경우 oVirt 엔진 서버의 인증서(ca.cert)를 다운받아 적용해야 함.
             handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+            // Authentication Credential(현재 사용하지 않음)
+            // handler.Credentials = AuthenticationCredential(_host_protocol + "://" + _host + ovirtHandler._uri, _DIGEST, _digest_id, _digest_password);
             // 클라이언트 생성
             client = new HttpClient(handler);
             // 기본 프로토콜로 URL 설정 = https:// oVirt-engine 서버 URL
@@ -124,21 +149,53 @@ namespace csharpOvWorksClient_1._0._0
             // GET, POST handler
             ovWorksClientHandler = new OvWorksClientHandler();
 
-            // 테두리 없는 대시보드의 상단 제목 영역에서 창을 이동한다. 로그아웃/최소화/최대화
-            // 컨트롤은 연결하지 않아 각각의 클릭 동작을 그대로 유지한다.
-            tableLayoutPanel2.MouseDown += WindowDrag_MouseDown;
-            titleLabel.MouseDown += WindowDrag_MouseDown;
-            pictureBox2.MouseDown += WindowDrag_MouseDown;
-            usernameLabel.MouseDown += WindowDrag_MouseDown;
-            label2.MouseDown += WindowDrag_MouseDown;
-
         }
+        //네트워크 연결상태(Online/Offline) 확인 -2026-09-06-        
+        private static void OnNetworkAvailabilityChanged(object sender, NetworkAvailabilityEventArgs networkAvailability) =>
+            notification(networkAvailability.IsAvailable);
 
-        private void WindowDrag_MouseDown(object sender, MouseEventArgs e)
+        private static void notification(bool isAvailable)
         {
-            BorderlessWindowDrag.Begin(this, e);
+            switch (isAvailable)
+            {
+                case true:
+                    MessageBox.Show(new Form() { TopMost = true }, "네트워크가 연결 되었습니다.", "네트워크 상태 변경");
+                    break;
+                case false:
+                    MessageBox.Show(new Form() { TopMost = true }, "네트워크 연결이 끊어졌습니다.", "네트워크 상태 변경");
+                    break;
+            }
         }
+        // -2026-09-06-
+        private async Task hashResultRetransmit(string path, string fname)
+        {
+            if (File.Exists(path + "\\" + fname))
+            {
+                //string xml = await ovWorksClientHandler.Txt2FileRead(path, fname);
+                List<string> xml = await ovWorksClientHandler.Txt2FileRead(path, fname);
 
+                //string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler, xml);                
+                foreach (string line in xml)
+                {
+                    string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler, line);
+                    await Task.Delay(100);
+                    //MessageBox.Show(line);
+                }
+                File.Delete(path + "\\" + fname); 
+            }
+        }
+        // 인증 방식을 적용할 경우 credential 생성
+        public CredentialCache AuthenticationCredential(string url, string auth, string id, string password)
+        {
+            var digest_uri = new Uri(url);
+            var credentialCache = new CredentialCache();
+            credentialCache.Add(
+                new Uri(digest_uri.GetLeftPart(UriPartial.Authority)),
+                        auth, // Authentication type(Basic or Digest)
+                        new NetworkCredential(id, password) // Credientials(id, password)
+                        );
+            return credentialCache;
+        }
         // 로그인부터 로그아웃까지 하나의 HttpClient를 쓴다. 요청마다 새로 만들면 핸들러가 들고 있는
         // 쿠키 저장소가 함께 버려져 엔진이 발급한 JSESSIONID가 사라지고, 그러면 세션을 유지해 달라고
         // 요청해도 이어갈 세션을 가리킬 수단이 없다.
@@ -149,17 +206,10 @@ namespace csharpOvWorksClient_1._0._0
                 return;
             }
 
-            Uri baseAddress = BuildEngineBaseAddress(_host);
-
-            // 프로그램 설치 폴더에 public_key.pem과 함께 배포된 oVirt CA를 사용한다.
-            string caCertPath = OvWorksApplicationFiles.CaCertificatePath;
-            if (!File.Exists(caCertPath))
-            {
-                throw new FileNotFoundException("oVirt CA 인증서 파일을 찾을 수 없습니다.", caCertPath);
-            }
+            // Load the oVirt CA certificate -2026-08-21-
+            //string caCertPath = "ca.crt"; // Path to oVirt engine's CA certificate
+            string caCertPath = ovWorksConfig._config_path + "\\" + ovWorksConfig._SSLCertificate_fname; // Path to oVirt engine's CA certificate
             X509Certificate2 ovirtCaCert = new X509Certificate2(caCertPath);
-            IPAddress engineIpAddress;
-            bool connectingByIpAddress = IPAddress.TryParse(baseAddress.Host, out engineIpAddress);
 
             handler = new HttpClientHandler();
             // 세션 쿠키(JSESSIONID)를 이 클라이언트가 살아 있는 동안 보관한다.
@@ -172,33 +222,15 @@ namespace csharpOvWorksClient_1._0._0
             {
                 if (cert == null) return false;
 
-                // DNS 이름으로 접속할 때는 인증서 이름이 반드시 일치해야 한다. 현장에서는 엔진을
-                // IP로 직접 입력하지만 기존 oVirt 인증서에 IP SAN이 없는 경우가 있으므로, IP 접속의
-                // 이름 불일치는 아래의 배포 CA pin 검증이 성공할 때에만 허용한다.
-                if ((errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0
-                    && !connectingByIpAddress)
-                {
-                    return false;
-                }
-
-                // ExtraStore는 인증서 후보만 추가할 뿐 신뢰 대상을 고정하지 않는다. 따라서 체인을
-                // 만든 뒤 루트가 배포된 oVirt CA와 정확히 같은지도 확인한다. AllowUnknown...만
-                // 사용하면 공격자가 만든 자체 서명 CA도 통과할 수 있다.
+                // Validate against the specific oVirt CA cert
                 using (X509Chain customChain = new X509Chain())
                 {
                     customChain.ChainPolicy.ExtraStore.Add(ovirtCaCert);
                     customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
                     customChain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    bool isTrusted = customChain.Build(new X509Certificate2(cert));
-                    if (!isTrusted || customChain.ChainElements.Count == 0)
-                    {
-                        return false;
-                    }
 
-                    X509Certificate2 chainRoot = customChain.ChainElements[
-                        customChain.ChainElements.Count - 1].Certificate;
-                    return string.Equals(chainRoot.Thumbprint, ovirtCaCert.Thumbprint,
-                        StringComparison.OrdinalIgnoreCase);
+                    bool isTrusted = customChain.Build(new X509Certificate2(cert));
+                    return isTrusted;
                 }
             };
 
@@ -209,46 +241,37 @@ namespace csharpOvWorksClient_1._0._0
                 OnSessionRejected, ovWorksURI.SESSION_END_REASON_HEADER,
                 ovWorksURI._api_uri + ovWorksURI._api_root);
             client = new HttpClient(credentialsHandler);
-            // User-Agent : SAEOLL
-            //client.DefaultRequestHeaders.Add("User-Agent","SAEOLL");
-            client.DefaultRequestHeaders.Add("X-Client-Serial", _serialNum);
-
-            //REST API Encryption Header- 2026-07-24
-            client.DefaultRequestHeaders.Add("X-OVirt-Credentials-Encryption", "RSA-OAEP-SHA256");
-
-            // 요청마다 같은 값을 넣던 헤더들. 클라이언트를 재사용하게 되면서 여기서 한 번만
-            // 설정한다. DefaultRequestHeaders.Add는 같은 헤더를 덮어쓰지 않고 덧붙이므로,
-            // 요청마다 부르면 값이 중복되거나 예외가 난다.
-            client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
-            client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue(ovWorksURI.ACCEPT_XML));
-
-            // 세션 유지 요청. 이것이 없으면 엔진은 요청이 끝날 때마다 세션을 닫는다.
-            client.DefaultRequestHeaders.Add("Prefer", ovWorksURI.PREFER_PERSISTENT_AUTH);
-            client.DefaultRequestHeaders.Add("Session-TTL", ovWorksURI.SESSION_TTL_MINUTES);
-
-            // Authorization 은 여기서 넣지 않는다. 한 번 만든 값을 계속 쓰면 그것을 가로챈
-            // 쪽이 나중에 그대로 다시 보낼 수 있으므로, FreshCredentialsHandler 가 요청마다
-            // 새로 만들어 붙인다.
-
-            client.BaseAddress = baseAddress;
-        }
-
-        private static Uri BuildEngineBaseAddress(string host)
-        {
-            Uri uri;
-            string candidate = Uri.UriSchemeHttps + "://" + (host ?? string.Empty).Trim().TrimEnd('/') + "/";
-            if (!Uri.TryCreate(candidate, UriKind.Absolute, out uri)
-                || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrWhiteSpace(uri.Host)
-                || !string.IsNullOrEmpty(uri.UserInfo)
-                || uri.AbsolutePath != "/"
-                || !string.IsNullOrEmpty(uri.Query)
-                || !string.IsNullOrEmpty(uri.Fragment))
+            try
             {
-                throw new UriFormatException("엔진 주소에는 호스트 이름 또는 IP 주소와 포트만 입력해야 합니다.");
+                // User-Agent : SAEOLL
+                //client.DefaultRequestHeaders.Add("User-Agent","SAEOLL");
+                client.DefaultRequestHeaders.Add("X-Client-Serial", _serialNum);
+
+                //REST API Encryption Header- 2026-07-24
+                client.DefaultRequestHeaders.Add("X-OVirt-Credentials-Encryption", "RSA-OAEP-SHA256");
+
+                // 요청마다 같은 값을 넣던 헤더들. 클라이언트를 재사용하게 되면서 여기서 한 번만
+                // 설정한다. DefaultRequestHeaders.Add는 같은 헤더를 덮어쓰지 않고 덧붙이므로,
+                // 요청마다 부르면 값이 중복되거나 예외가 난다.
+                client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
+                client.DefaultRequestHeaders.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue(ovWorksURI.ACCEPT_XML));
+
+                // 세션 유지 요청. 이것이 없으면 엔진은 요청이 끝날 때마다 세션을 닫는다.
+                client.DefaultRequestHeaders.Add("Prefer", ovWorksURI.PREFER_PERSISTENT_AUTH);
+                client.DefaultRequestHeaders.Add("Session-TTL", ovWorksURI.SESSION_TTL_MINUTES);
+
+                // Authorization 은 여기서 넣지 않는다. 한 번 만든 값을 계속 쓰면 그것을 가로챈
+                // 쪽이 나중에 그대로 다시 보낼 수 있으므로, FreshCredentialsHandler 가 요청마다
+                // 새로 만들어 붙인다.
+
+                // 기본 프로토콜로 URL 설정 = https:// oVirt-engine 서버 URL
+                client.BaseAddress = new Uri(_host_protocol + "://" + _host); ;
             }
-            return uri;
+            catch (Exception ex)
+            {
+                MessageBox.Show("URI Error :" + ex.ToString());
+            }            
         }
         /// <summary>
         /// 이번 요청에 쓸 Basic 자격증명을 만든다.
@@ -259,14 +282,9 @@ namespace csharpOvWorksClient_1._0._0
         /// </summary>
         private AuthenticationHeaderValue BuildAuthorization()
         {
-            string encryptedUsername = _username.Use(value =>
-                RsaEncryptionLegacy.EncryptWithPemPublicKey(_publicKeyPath, value));
-            string encryptedPassword = _password.Use(value =>
-                RsaEncryptionLegacy.EncryptWithPemPublicKey(
-                    _publicKeyPath, OvWorksLoginEnvelope.Wrap(value)));
-
-            return new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                encryptedUsername + "@" + _profile + ":" + encryptedPassword)));
+            string encryptedUsername = RsaEncryptionLegacy.EncryptWithPemPublicKey(_publicKeyPath, _username);
+            string encryptedPassword = RsaEncryptionLegacy.EncryptWithPemPublicKey(_publicKeyPath, OvWorksLoginEnvelope.Wrap(_password));
+            return new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes(encryptedUsername + "@" + _profile + ":" + encryptedPassword)));
         }
 
         /// <summary>
@@ -340,9 +358,9 @@ namespace csharpOvWorksClient_1._0._0
 
                 if (authenticating)
                 {
-                    // 오류 응답(예: 500/503)을 인증 성공으로 오인하면 다음 요청부터 자격증명을
-                    // 빼서 연쇄 401을 만든다. 성공 응답을 받은 경우에만 세션을 열었다고 표시한다.
-                    if (response.IsSuccessStatusCode)
+                    // 401 이 아닌 답이 왔다는 것은 자격증명이 통과했다는 뜻이고, 통과했다는 것은
+                    // 엔진에 세션이 섰다는 뜻이다. 다음 요청부터는 그 세션으로 간다.
+                    if (response.StatusCode != HttpStatusCode.Unauthorized)
                     {
                         sessionOpened();
                     }
@@ -577,21 +595,7 @@ namespace csharpOvWorksClient_1._0._0
                 {
                     await EndSessionAsync(status.Reason);
                 }
-                else if (status.State == OvWorksSessionState.Unknown && !_serverConnectionInterrupted)
-                {
-                    _serverConnectionInterrupted = true;
-                    OvWorksAuditQueue.Enqueue(
-                        "Connection to oVirt Engine was interrupted at " + DateTime.UtcNow.ToString("o") +
-                        " for profile " + _profile + ".", "warning");
-                }
-                else if (status.State == OvWorksSessionState.Live && _serverConnectionInterrupted)
-                {
-                    _serverConnectionInterrupted = false;
-                    OvWorksAuditQueue.Enqueue(
-                        "Connection to oVirt Engine was restored at " + DateTime.UtcNow.ToString("o") +
-                        " for profile " + _profile + ".", "normal");
-                    await FlushPendingAuditNotificationsAsync();
-                }
+                // Unknown 은 아무것도 하지 않는다. 답을 얻지 못한 것이지 세션이 끝난 것이 아니다.
             }
             finally
             {
@@ -627,8 +631,6 @@ namespace csharpOvWorksClient_1._0._0
         {
             // 창이 어떤 길로 닫히든 타이머는 멈춘다.
             StopSessionPolling();
-            if (_username != null) _username.Dispose();
-            if (_password != null) _password.Dispose();
             base.OnFormClosed(e);
         }
 
@@ -739,18 +741,27 @@ namespace csharpOvWorksClient_1._0._0
         {
             vmListView.Items.Clear();
             string result;
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신 목록을 불러오는 중입니다.\r\n잠시만 기다려 주십시오."))
+
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
-                // 입력 ID를 Label.Text에 복사하면 세션 동안 평문 문자열이 남으므로 표시하지 않는다.
-                usernameLabel.Text = "인증 사용자";
+                // Vusername -2026-09-02-
+                //usernameLabel.Text = _username;
+                usernameLabel.Text = _Vusername;
                 // HttpClient 초기화
                 InitHttpClient();
+
                 // 사용자의 VM 정보 가져오기
                 result = await ovWorksClientHandler.GETvmsSync(client, ovWorksURI);
+                
             }
                 if (result.Equals("Unauthorized") || result.Equals("-2146233088"))
                 {
+                // -2026-10-04
+                // 무결성 감사기록
+                await ovWorksHash.unsavedAuditLogs(string.Empty, _profile, ovWorksConfig, ovWorksClientHandler);
+                    
+                    //Application.Exit();
+
                     // 첫 VM 조회에서 인증이 성립하지 않았으므로 종료할 엔진 세션도 없다.
                     // 이때 사용자 로그아웃 이벤트를 호출하면 세션 쿠키가 없는 상태로
                     // /api/logout 을 보내 로그인 직후 로그아웃한 것처럼 기록된다.
@@ -853,11 +864,38 @@ namespace csharpOvWorksClient_1._0._0
                 await auditAction();
             //}
 
+            // -2026-09-06-
+            //-2026-10-01-
+            ovWorksConfig._hashResultTemp_fname = ovWorksConfig.userFileName(String.Empty) + ".hrt";
+            await hashResultRetransmit(ovWorksConfig._config_path, ovWorksConfig._hashResultTemp_fname);
+            //MessageBox.Show("11");
+            ovWorksConfig._hashResultTemp_fname = ovWorksConfig.userFileName(_username) + ".hrt";
+            await hashResultRetransmit(ovWorksConfig._config_path, ovWorksConfig._hashResultTemp_fname);
+            //MessageBox.Show("22");
+
             // 세션이 선 뒤부터 묻는다. 이 지점까지 왔다는 것은 첫 요청이 인증을 통과했다는 뜻이다.
             StartSessionPolling();
         }
+        public async Task<byte[]> auditFileReader(string filename, int len)
+        {
+            byte[] _byte = new byte[len];
+            try
+            {
+                FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read);
+                fileStream.Read(_byte, 0, len);
+                fileStream.Close();
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("File Read Exception...\n" + e.Message, "Error", MessageBoxButtons.OK);
+            }
+            return _byte;
+        }
         private async Task auditAction()
         {
+            string job;
+            Random rnd = new Random();
+            
             // Get local IP Address(IPv4) -2026-08-21-
             string hostName = Dns.GetHostName();
             string localIPv4Address = string.Empty;
@@ -868,25 +906,80 @@ namespace csharpOvWorksClient_1._0._0
                 if (ip.AddressFamily == AddressFamily.InterNetwork)
                 {
                     localIPv4Address = ip.ToString();
+                    break;
                 }
             }
+            if (ovWorksHash.hashCheckCnt < 2)
+            {
+                job = "Startup Checked";
+            }
+            else
+            {
+                job = "Check as requested";
+            }
+            /*
+            string _xml = $"<event>" +
+                $"<description>User {_username}@{_profile}-authz connected from '{localIPv4Address}' OV-Works Client 4.5.1 Integrity {_hashStatus}</description>" +
+                $"<severity>{_hashStatus}</severity>" +
+                $"<origin>OV-Works Client 4.5.1</origin>" +
+                $"<custom_id>{DateTime.Now.ToString("Md") + rnd.Next(10, 100).ToString()}</custom_id>" +
+                $"</event>";
+            */
+            string _xml = $"<event>" +
+                $"<description>User {_Vusername}@{_profile}-authz connected from '{localIPv4Address}' OV-Works Client 4.5.1 Integrity({ovWorksHash.hashCheckCnt.ToString()}) '{job}' {_hashStatus}</description>" +
+                $"<severity>{_hashStatus}</severity>" +
+                $"<origin>OV-Works Client 4.5.1</origin>" +
+                $"<custom_id>{DateTime.Now.ToString("Md") + rnd.Next(10, 100).ToString()}</custom_id>" +
+                $"</event>";
+            int selectedIndex = ListviewSelectedIndex();
+            //string audit_info;
+            // PKI cert hash
 
-            OvWorksAuditQueue.Enqueue(
-                $"Authenticated user for profile {_profile} connected from '{localIPv4Address}' " +
-                $"{OvWorksProductInfo.ComponentName} Integrity {_hashStatus}", _hashStatus);
             InitHttpClient();
+            /*
             bool _pkicert = await ovWorksClientHandler.GETPKIcert(client, ovWorksURI, ovWorksConfig);
             if (_pkicert)
             {
-                await FlushPendingAuditNotificationsAsync();
-            }
-            DisposeHttpClient();
+            */
+            /*
+            X509Certificate2 cert = new X509Certificate2(ovWorksConfig._config_path + "\\" + ovWorksConfig._ca_cert_fname);
+            ovWorksCryptography.defaultKeyASE256 = cert.GetCertHashString().Substring(0, 32);
+            audit_info = Encoding.UTF8.GetString(await auditFileReader(ovWorksConfig._audit_fname, 64));
+            audit_info = ovWorksCryptography.AESDecrypt256(audit_info);                
+            //MessageBox.Show(audit_info, "Error", MessageBoxButtons.OK);
+            string[] audit_words =audit_info.Split(' ');
+            //string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler,
+            //    _xml, audit_words[0], audit_words[1], audit_words[2]);
+            */
+            /*
+            string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler,
+                    _xml, _username, _profile, _password);
         }
+            */
+            // 추가 -2026-09-03-
+            string _URL = _host_protocol + "://" + _host + ovWorksURI._api_uri + ovWorksURI._api_service + ovWorksURI._api_health;
+            bool isAliveEngine = await ovWorksClientHandler.IsRemoteServerAliveAsync(client, _URL);
+            if (isAliveEngine)
+            {
+                string rx = await ovWorksClientHandler.POSTAuditactionAsync(client, ovWorksURI, ovWorksClientHandler, _xml);
+            }
+            else
+            {
+                // Engine is Dead -2026-09-06-
+                _xml = $"<event>" +
+                $"<description>User {_Vusername}@{_profile}-authz connected from '{localIPv4Address}' OV-Works Client 4.5.1 Integrity({ovWorksHash.hashCheckCnt.ToString()}) '{job}' {_hashStatus} Resending data from {DateTime.Now.ToString("yyyy.MM.dd.tt hh:mm:ss")}</description>" +
+                $"<severity>{_hashStatus}</severity>" +
+                $"<origin>OV-Works Client 4.5.1</origin>" +
+                $"<custom_id>{DateTime.Now.ToString("Md") + rnd.Next(10, 100).ToString()}</custom_id>" +
+                $"</event>";
+                ovWorksConfig._hashResultTemp_fname = ovWorksConfig.userFileName(_username) + ".hrt";
+                bool ret = await ovWorksClientHandler.Txt2FileSave(_xml, ovWorksConfig._config_path, ovWorksConfig._hashResultTemp_fname);
+                MessageBox.Show("호스트와 연결 되지 않고 있습니다. \r\n 클라이언트를 종료합니다.","클라이언트 종료 메시지",MessageBoxButtons.OK,MessageBoxIcon.Stop);
+                Application.Exit();
+                //Environment.Exit(0); 
+            }
 
-        private async Task FlushPendingAuditNotificationsAsync()
-        {
-            await OvWorksAuditQueue.FlushAsync(xml =>
-                ovWorksClientHandler.TryPostAuditActionAsync(client, ovWorksURI, xml));
+            DisposeHttpClient();
         }
         private void Serializer2_UnreferencedObject(object sender, UnreferencedObjectEventArgs e)
         {
@@ -896,6 +989,7 @@ namespace csharpOvWorksClient_1._0._0
         private async void logoutPictureBox_Click(object sender, EventArgs e)
         {
             await ReturnToLoginAsync(true);
+            //MessageBox.Show("LOGOUT OK");
         }
 
         private async Task ReturnToLoginAsync(Boolean endEngineSession)
@@ -906,7 +1000,11 @@ namespace csharpOvWorksClient_1._0._0
             ovWorksConfig.FileConfigFlush(ovWorksConfig._config_path + "\\" + ovWorksConfig._vm_console_fname);
             ovWorksConfig.FileConfigFlush(ovWorksConfig._config_path + "\\" + ovWorksConfig._config_fname);
             ovWorksConfig.FileConfigFlush(ovWorksConfig._config_path + "\\" + ovWorksConfig._ca_cert_fname);
-            
+
+            //-2026-10-01-
+            ovWorksConfig.FileConfigFlush(ovWorksConfig._config_path + "\\" + ovWorksConfig._SSLCertificate_fname);
+            ovWorksConfig.FileConfigFlush(ovWorksConfig._config_path + "\\" + ovWorksConfig._publicKey_fname);
+
             // 엔진 세션 종료. 클라이언트만 닫으면 세션은 유휴 한도(Session-TTL)가 지날 때까지
             // 엔진에 남아 있다.
             // 세션을 세운 적이 없으면 끝낼 것도 없다. 그 상태에서 logout 요청을 보내면 로그인
@@ -924,14 +1022,14 @@ namespace csharpOvWorksClient_1._0._0
         {
             /*
             int selectedIndex = ListviewSelectedIndex();
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "콘솔 연결 정보를 준비하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 InitHttpClient();
                                 
                 //public async Task<Boolean> RemoteViewer(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler, OvWorksConfig ovwconfig,
+                //int index, string _username, string _profile, string _password)
                 Boolean rx = await ovWorksClientHandler.RemoteViewer(client, ovWorksURI, ovWorksClientHandler, ovWorksConfig,
-                    selectedIndex, "spice");
+                    selectedIndex, _username, _profile, _password);
                 
                 if (rx) 
                 {
@@ -975,8 +1073,7 @@ namespace csharpOvWorksClient_1._0._0
         {
             int selectedIndex = ListviewSelectedIndex();
             string selectedConsoleProtocol = ListviewSelectedDisplayProtocol();
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "콘솔 연결 정보를 준비하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 InitHttpClient();
                 Boolean rx = await ovWorksClientHandler.RemoteViewer(client, ovWorksURI, ovWorksClientHandler, ovWorksConfig,
@@ -992,8 +1089,7 @@ namespace csharpOvWorksClient_1._0._0
 
         private async void runButton_Click(object sender, EventArgs e)
         {
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신을 실행하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 int selectedIndex = ListviewSelectedIndex();
                 InitHttpClient();
@@ -1007,13 +1103,12 @@ namespace csharpOvWorksClient_1._0._0
 
         private async void suspendButton_Click(object sender, EventArgs e)
         {
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신을 일시 정지하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 int selectedIndex = ListviewSelectedIndex();
                 InitHttpClient();
                 string rx = await ovWorksClientHandler.POSTVMactionAsync(client, ovWorksURI, ovWorksClientHandler,
-                    selectedIndex, ovWorksClientHandler._vm_suspend);
+                    selectedIndex, ovWorksClientHandler._vm_suspend);                
                 DisposeHttpClient();
             }
             MessageBox.Show("가상머신(VM)을 정지 하였습니다.\n수 초(second) 동안 대기 후 정지가 완료됩니다.", "가상머신(VM) 정지(suspend)",
@@ -1022,8 +1117,7 @@ namespace csharpOvWorksClient_1._0._0
 
         private async void rebootButton_Click(object sender, EventArgs e)
         {
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신을 재시작하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 int selectedIndex = ListviewSelectedIndex();
                 InitHttpClient();
@@ -1038,8 +1132,7 @@ namespace csharpOvWorksClient_1._0._0
 
         private async void stopButton_Click(object sender, EventArgs e)
         {
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신을 종료하는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
                 int selectedIndex = ListviewSelectedIndex();
                 InitHttpClient();
@@ -1055,10 +1148,9 @@ namespace csharpOvWorksClient_1._0._0
         private async void VMListRefreshButton_Click(object sender, EventArgs e)
         {
             vmListView.Items.Clear();
-            using (var waitForm = new OvWorksWaitingForm(this,
-                "가상 머신 목록을 새로 고치는 중입니다.\r\n잠시만 기다려 주십시오."))
+            using (var waitForm = new OvWorksWaitingForm(this))
             {
-                usernameLabel.Text = "인증 사용자";
+                usernameLabel.Text = _username;
                 // HttpClient 초기화
                 InitHttpClient();
                 // 사용자의 VM 정보 가져오기. 이 시점의 401은 로그인 실패가 아니라 세션 종료다.
@@ -1167,19 +1259,43 @@ namespace csharpOvWorksClient_1._0._0
 
         private void versionButton_Click(object sender, EventArgs e)
         {
-            string swInfo = " 제품명 : " + OvWorksProductInfo.ProductName + "\n\n" +
-                " 세부버전 : " + OvWorksProductInfo.DetailVersion + "\n\n" +
-                " 구성요소명 : " + OvWorksProductInfo.ComponentName + "\n\n";
-            string userInfo = " 사용자 : 인증됨\n\n";
-            string companyInfo = " Copyright by " + ovWorksURI._company +" \n\n ";
-            string versionInfo = swInfo + userInfo + companyInfo + System.DateTime.Now;
-            MessageBox.Show(versionInfo, "버전 정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            string swInfo = " 제품명 : " + ovWorksURI._sw_name + " \n\n";
+            string userInfo = " 세부버전 : " + ovWorksURI._version + "\n\n";
+            string companyInfo = " 구성요소명 :  " + ovWorksURI._company +" \n\n ";
+            string versionInfo = swInfo + userInfo + companyInfo; 
+            MessageBox.Show(versionInfo, " 클라이언트 버전 정보 ", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private async void integrityButton_Click(object sender, EventArgs e)
         {
-            ovWorksHash.integrityCheck();
+            ovWorksHash.integrityCheck(_username, _profile);
             await auditAction();
+        }
+
+        private void vmListView_MouseDown(object sender, MouseEventArgs e)
+        {
+            // HitTest checks what is directly under the mouse cursor
+            ListViewHitTestInfo hitInfo = vmListView.HitTest(e.Location);
+
+            // If the user clicked on empty space (not on an item)
+            if (hitInfo.Item == null)
+            {
+                vmListView.SelectedItems.Clear(); // Clears selection directly
+            }
+
+            // -2026-09-06-
+            SetVMcontrolButton(false, false, false, false, false);
+            statusLabel.Text = string.Empty;
+        }
+
+        private void titleLabel_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                ReleaseCapture();
+                // 패널을 움직였지만 창 전체(this.Handle)를 이동시킵니다
+                SendMessage(this.Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            }
         }
     }
 }
