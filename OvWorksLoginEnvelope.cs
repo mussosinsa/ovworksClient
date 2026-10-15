@@ -1,5 +1,6 @@
 using System;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace csharpOvWorksClient_1._0._0
 {
@@ -36,6 +37,18 @@ namespace csharpOvWorksClient_1._0._0
         {
             long issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             return Prefix + issuedAt + Separator + NewNonce() + Separator + credential;
+        }
+
+        public static byte[] Wrap(byte[] credential)
+        {
+            if (credential == null) throw new ArgumentNullException("credential");
+            byte[] prefix = Encoding.UTF8.GetBytes(
+                Prefix + DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Separator + NewNonce() + Separator);
+            var result = new byte[prefix.Length + credential.Length];
+            Buffer.BlockCopy(prefix, 0, result, 0, prefix.Length);
+            Buffer.BlockCopy(credential, 0, result, prefix.Length, credential.Length);
+            Array.Clear(prefix, 0, prefix.Length);
+            return result;
         }
 
         private static string NewNonce()

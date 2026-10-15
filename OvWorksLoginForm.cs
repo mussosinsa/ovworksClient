@@ -13,16 +13,8 @@ namespace csharpOvWorksClient_1._0._0
         {
             InitializeComponent();
 
-            // Data Integrity Check 
+            // Program.Main의 시작 검사를 통과한 상태를 대시보드 감사 이벤트에 전달한다.
             ovWorksHash = new OvWorksHash();
-            //hashCheck();
-            //ovWorksHash.integrityCheck();            
-            if (!integritySW.Expired)
-            {
-                // 시작할 때는 결과 팝업을 띄우지 않는다. 실패 상태는 감사 이벤트에 전달되고,
-                // 사용자가 무결성 검사 버튼을 누르면 상세 결과를 확인할 수 있다.
-                ovWorksHash.integrityCheck(false);
-            }
 
             // 테두리가 없는 로그인 창도 일반 제목 표시줄처럼 이동할 수 있게 한다.
             // 입력 컨트롤과 버튼에는 연결하지 않아 텍스트 선택/클릭 동작을 방해하지 않는다.
@@ -110,34 +102,108 @@ namespace csharpOvWorksClient_1._0._0
             passwordTextBox.UseSystemPasswordChar=true;
         }
 
-        private void loginButton_Click(object sender, EventArgs e)
+        private async void loginButton_Click(object sender, EventArgs e)
         {
             try
             {
-                string publicKeyPath = OvWorksApplicationFiles.PublicKeyPath;
-
-                if (!File.Exists(publicKeyPath))
+                if (EmptyCheck())
                 {
-                    MessageBox.Show("공개키 파일이 없습니다.\r\n\r\n" + publicKeyPath);
+                    return;
+                }
 
+                string publicKeyPath = OvWorksApplicationFiles.PublicKeyPath;
+                string caCertificatePath = OvWorksApplicationFiles.CaCertificatePath;
+                bool caCertificateMissing = !File.Exists(caCertificatePath);
+                bool publicKeyMissing = !File.Exists(publicKeyPath);
+
+                if (caCertificateMissing || publicKeyMissing)
+                {
+                    string missingFiles =
+                        (caCertificateMissing ? "- ca.crt\r\n" : string.Empty) +
+                        (publicKeyMissing ? "- public_key.pem\r\n" : string.Empty);
+                    if (!OvWorksProductInfo.DemoSecurityBootstrap)
+                    {
+                        MessageBox.Show(
+                            "운영 모드에서는 보안 파일을 네트워크로 자동 다운로드하지 않습니다.\r\n\r\n" +
+                            missingFiles + "\r\n관리자가 검증한 파일을 다음 폴더에 직접 등록해 주세요.\r\n" +
+                            OvWorksApplicationFiles.SecurityFilesDirectory,
+                            "보안 파일 직접 등록 필요", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                        return;
+                    }
+
+                    DialogResult downloadResult = MessageBox.Show(
+                        "로그인에 필요한 다음 보안 파일이 없습니다.\r\n\r\n" +
+                        missingFiles + "\r\n사용자 보안 파일 폴더에 다운로드하시겠습니까?\r\n" +
+                        OvWorksApplicationFiles.SecurityFilesDirectory,
+                        "데모 전용 보안 파일 다운로드",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (downloadResult != DialogResult.Yes)
+                    {
+                        return;
+                    }
+
+                    loginButton.Enabled = false;
+                    try
+                    {
+                        await OvWorksSecurityFilesDownloader.DownloadMissingFilesAsync(
+                            hostTextBox.Text);
+                    }
+                    finally
+                    {
+                        loginButton.Enabled = true;
+                    }
+
+                    MessageBox.Show(
+                        "보안 파일 다운로드가 완료되었습니다.",
+                        "보안 파일 다운로드",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+
+                // 정적 파일 시작 검사를 통과한 뒤 보안 파일만 별도 단계로 검증한다.
+                bool securityFilesValid = OvWorksProductInfo.DemoSecurityBootstrap
+                    ? ovWorksHash.demoSecurityFilesCheck()
+                    : ovWorksHash.integrityCheck(false, true);
+                if (!securityFilesValid)
+                {
+                    MessageBox.Show(
+                        "보안 파일 준비 후 무결성 검사에 실패했습니다.\r\n\r\n" +
+                        ovWorksHash.LastFailureDetail,
+                        "무결성 검사 실패",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Stop);
                     return;
                 }
 
                 string username = usernameTextBox.Text;
                 string password = passwordTextBox.Text;
 
-                if (!EmptyCheck())
+                OvWorksProtectedValue protectedUsername = null;
+                OvWorksProtectedValue protectedPassword = null;
+                byte[] usernameBytes = null;
+                byte[] passwordBytes = null;
+                try
                 {
-                    // 여기서 암호화하는 것은 공개키가 쓸 수 있는 상태인지 지금 확인해 두기 위해서다.
-                    // 실제로 보낼 자격증명은 대시보드가 인증할 때마다 새로 만든다. 한 번 만든
-                    // 암호문을 들고 다니면 그것을 가로챈 쪽이 나중에 그대로 다시 보낼 수 있고,
-                    // 그것이 이 화면이 평문을 넘기게 된 이유다.
-                    RsaEncryptionLegacy.EncryptWithPemPublicKey(publicKeyPath, username);
-                    // 실제 패킷과 동일하게 envelope까지 포함한 길이와 공개키 상태를 확인한다.
-                    RsaEncryptionLegacy.EncryptWithPemPublicKey(
-                        publicKeyPath, OvWorksLoginEnvelope.Wrap(password));
+                    usernameBytes = System.Text.Encoding.UTF8.GetBytes(username);
+                    passwordBytes = System.Text.Encoding.UTF8.GetBytes(password);
+                    // 공개키와 실제 envelope 크기를 바이트 기반으로 확인하여 추가 평문 string을
+                    // 만들지 않는다.
+                    RsaEncryptionLegacy.EncryptWithPemPublicKey(publicKeyPath, usernameBytes);
+                    byte[] validationEnvelope = OvWorksLoginEnvelope.Wrap(passwordBytes);
+                    try { RsaEncryptionLegacy.EncryptWithPemPublicKey(publicKeyPath, validationEnvelope); }
+                    finally { Array.Clear(validationEnvelope, 0, validationEnvelope.Length); }
+                    protectedUsername = new OvWorksProtectedValue(usernameBytes);
+                    protectedPassword = new OvWorksProtectedValue(passwordBytes);
+                    username = null;
+                    password = null;
+                    usernameTextBox.Clear();
+                    passwordTextBox.Clear();
 
-                    using (OvWorksClientDashboardForm ovWorksClientDashboardForm = new OvWorksClientDashboardForm(serialNumberTextBox.Text, hostTextBox.Text, usernameTextBox.Text, username, profileTextBox.Text, password, ovWorksHash.hashStatus))
+                    using (OvWorksClientDashboardForm ovWorksClientDashboardForm = new OvWorksClientDashboardForm(
+                        serialNumberTextBox.Text, hostTextBox.Text, protectedUsername,
+                        profileTextBox.Text, protectedPassword, ovWorksHash.hashStatus))
                     {
                         this.Hide();
                         try
@@ -146,16 +212,30 @@ namespace csharpOvWorksClient_1._0._0
                         }
                         finally
                         {
-                            passwordTextBox.Clear();
                             this.Show();
                             this.Activate();
                         }
                     }
                 }
+                finally
+                {
+                    username = null;
+                    password = null;
+                    usernameTextBox.Clear();
+                    passwordTextBox.Clear();
+                    if (protectedUsername != null) protectedUsername.Dispose();
+                    if (protectedPassword != null) protectedPassword.Dispose();
+                    if (usernameBytes != null) Array.Clear(usernameBytes, 0, usernameBytes.Length);
+                    if (passwordBytes != null) Array.Clear(passwordBytes, 0, passwordBytes.Length);
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.ToString(), "로그인 초기화 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    "보안 파일 다운로드 또는 로그인 준비에 실패했습니다.\r\n\r\n" + ex.Message,
+                    "로그인 초기화 오류",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 
