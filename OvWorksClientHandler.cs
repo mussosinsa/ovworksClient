@@ -6,7 +6,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -125,7 +124,7 @@ namespace csharpOvWorksClient_1._0._0
             }
         }
 
-        public async Task<string> GETusersSync(HttpClient client, OvWorksURI _URI, string _username, string _profile, string _password)
+        public async Task<string> GETusersSync(HttpClient client, OvWorksURI _URI)
         {
             // User-Agent, Accept, Authorization 은 InitHttpClient()에서 한 번만 설정한다.
             // DefaultRequestHeaders 는 클라이언트 전체에 적용되므로 요청마다 Add 하면 값이 쌓인다.
@@ -141,8 +140,7 @@ namespace csharpOvWorksClient_1._0._0
         // 이미 세션을 가진 요청이 거절당한 것은 세션이 끝났다는 뜻이다. 뒤의 경우에 "로그인에
         // 실패했습니다"를 띄우면 사용자는 자기 비밀번호를 의심하게 된다. 세션이 끝난 것은 왜
         // 끝났는지까지 담아 대시보드가 알리므로, 여기서는 아무 말도 하지 않고 돌려준다.
-        public async Task<string> GETvmsSync(HttpClient client, OvWorksURI _URI, string _username, string _profile, string _password,
-            Boolean authenticating = true)
+        public async Task<string> GETvmsSync(HttpClient client, OvWorksURI _URI, Boolean authenticating = true)
         {
             // 헤더는 InitHttpClient()에서 한 번만 설정한다. 요청마다 Add 하면 같은 헤더가 중복되고,
             // 재사용되는 클라이언트에서는 InvalidOperationException 으로 이어진다.
@@ -206,17 +204,8 @@ namespace csharpOvWorksClient_1._0._0
                 "서버 연결 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         public async Task<string> GETGuestVMinfo(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler,
-            int index, string _username, string _profile, string _password, string action)
+            int index, string action)
         {
-            /*
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
-            client.DefaultRequestHeaders.Accept.Add(
-                    new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_XML));
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(
-               $"{_username + "@" + _profile}:{_password}"))); 
-            */
             using (var response = await client.GetAsync(_URI._api_uri + _URI._api_vms + $"/{ovwhandler._vm_id[index]}/" + action))
             {
                 if (!response.IsSuccessStatusCode) return string.Empty;
@@ -226,15 +215,6 @@ namespace csharpOvWorksClient_1._0._0
         public async Task<Boolean> GETPKIcert(HttpClient client, OvWorksURI _URI, OvWorksConfig ovwconfig
             )
         {
-            /*
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("User-Agent", "C# oVirt remote viewer program");
-            client.DefaultRequestHeaders.Accept.Add(
-                    new MediaTypeWithQualityHeaderValue(_URI.ACCEPT_XML));
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(
-               $"{_username + "@" + _profile}:{_password}"))); 
-            */
             using (var response = await client.GetAsync(_URI._api_uri + _URI._api_cert))
             {
                 if (!response.IsSuccessStatusCode) return false;
@@ -245,7 +225,7 @@ namespace csharpOvWorksClient_1._0._0
             //return result;
         }
         public async Task<Boolean> RemoteViewer(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler, OvWorksConfig ovwconfig, 
-            int index, string protocol, string _username, string _profile, string _password)
+            int index, string protocol)
         {
             string _uri_console = string.Empty;
             switch (protocol)
@@ -275,7 +255,7 @@ namespace csharpOvWorksClient_1._0._0
             }
         }
         public async Task<string> POSTVMactionAsync(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler, 
-            int index, string _username, string _profile, string _password, string action)
+            int index, string action)
         {
             /* Action to start a virtual machine --------------------------------------------
              * POST /ovirt-engine/api/vms/vm_id/start HTTP/1.1
@@ -301,76 +281,24 @@ namespace csharpOvWorksClient_1._0._0
                 }
             }
         }
-        public async Task<string> POSTAuditactionAsync(HttpClient client, OvWorksURI _URI, OvWorksClientHandler ovwhandler,
-            string _xml, string _username, string _profile, string _password)
+        public async Task<bool> TryPostAuditActionAsync(
+            HttpClient client, OvWorksURI uri, string xml)
         {
-            /* Action to start a virtual machine --------------------------------------------
-            POST /ovirt-engine/api/events HTTP/1.1
-            Accept: application/xml
-            Content-type: application/xml
-            <event>
-                <description>The heat of the host is above 30 Oc</description>
-                <severity>warning</severity>
-                <origin>HP Openview</origin>
-                <custom_id>1</custom_id>
-                <flood_rate>30</flood_rate>
-                <host id="f59a29cd-587d-48a3-b72a-db537eb21957" >
-                    <external_status>
-                        <state>warning</state>
-                </external_status>
-                </host>
-            </event>
-             * ------------------------------------------------------------------------------
-             */
-            string _uri_console = string.Empty;
-            _uri_console = _URI._api_uri + _URI._api_events;
-            var xml = _xml;
-            /*
-            var xml = @"
-<event> 
-<description>The OV-Works Client 1.0.0 Integrity warning</description> 
-  <severity>warning</severity> 
-  <origin>OV-Works</origin> 
-  <custom_id>12</custom_id> 
-</event>";  
-            */
             try
             {
-                using (var request = new HttpRequestMessage(HttpMethod.Post, _uri_console))
+                using (var request = new HttpRequestMessage(
+                    HttpMethod.Post, uri._api_uri + uri._api_events))
                 {
                     request.Content = new StringContent(xml, Encoding.UTF8, "application/xml");
                     using (var response = await client.SendAsync(request))
                     {
-                        return response.StatusCode.ToString();
+                        return response.IsSuccessStatusCode;
                     }
                 }
             }
-            catch (SocketException sockEx)
+            catch (Exception)
             {
-                MessageBox.Show($"Socket error code: {sockEx.SocketErrorCode}" + "\r\n" + $"Message: {sockEx.Message}");
-                return string.Empty;
-            }
-            catch (HttpRequestException ex) when (ex.InnerException is SocketException sockEx)
-            {
-                // Handle specific SocketErrors (e.g., connection refused, host not found)
-                //Console.WriteLine($"Socket error code: {sockEx.SocketErrorCode}");
-                //Console.WriteLine($"Message: {sockEx.Message}");
-                MessageBox.Show($"Socket error code: {sockEx.SocketErrorCode}" + "\r\n" + $"Message: {sockEx.Message}");
-                return string.Empty;
-            }
-            catch (HttpRequestException ex)
-            {
-                // Handle other HTTP request errors (e.g., non-success status codes)
-                //Console.WriteLine($"HTTP error: {ex.Message}");
-                MessageBox.Show($"HTTP error: {ex.Message}");
-                return string.Empty;
-            }
-            catch (Exception ex)
-            {
-                // Handle general fallbacks
-                //Console.WriteLine($"Unexpected error: {ex.Message}");
-                MessageBox.Show($"Unexpected error: {ex.Message}");
-                return string.Empty;
+                return false;
             }
         }
     }
